@@ -4,8 +4,10 @@ import time
 import random
 import re
 from groq import Groq
-from .prompts import RAG_PROMPT_TEMPLATE
 from dotenv import load_dotenv
+
+# VERCEL FIX: Removed relative import
+from prompts import RAG_PROMPT_TEMPLATE
 
 load_dotenv()
 
@@ -44,7 +46,6 @@ def call_groq_json(messages, model="llama-3.3-70b-versatile", temperature=0.2):
     return None
 
 def clean_question_text(text):
-    """Removes meta-references to 'Source A', 'Source B', or 'The text'."""
     if not text: return ""
     text = re.sub(r'(?i)(according to|based on|in) source [a-z]\s*,?', '', text)
     text = re.sub(r'(?i)source [a-z] (states|says|mentions)', 'the text states', text)
@@ -55,7 +56,6 @@ def clean_question_text(text):
     return text
 
 def get_type_instructions(question_type):
-    """Returns specific formatting instructions based on the question type."""
     if question_type == "Multiple-Answer":
         return """
         CRITICAL: This is a MULTIPLE RESPONSE question.
@@ -201,10 +201,6 @@ def adversarial_review(question_data, context):
 
 
 def generate_hard_questions_pipeline(retrieved_docs, retrieved_metas, num_questions=3, question_type="Multiple-Choice"):
-    """
-    Master pipeline that orchestrates Multi-hop, Bloom's, and Adversarial checks.
-    NOW ACCEPTS METADATA to track dual sources.
-    """
     final_questions = []
 
     combined_data = list(zip(retrieved_docs, retrieved_metas))
@@ -290,7 +286,6 @@ def generate_hard_questions_pipeline(retrieved_docs, retrieved_metas, num_questi
             print(f"Skipped question: Too easy/extractive.")
 
     return final_questions
-
 
 def grade_answer(question, reference_answer, student_answer):
     if not student_answer or len(student_answer.strip()) < 2:

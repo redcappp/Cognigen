@@ -1,8 +1,10 @@
 from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from .database import Base
-from datetime import datetime # <--- Importing the class directly fixes the error
+from datetime import datetime 
+
+# VERCEL FIX: Removed relative import
+from database import Base
 
 class User(Base):
     __tablename__ = "users"
@@ -12,10 +14,8 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    # Relationships
     books = relationship("Book", back_populates="owner")
     quizzes = relationship("Quiz", back_populates="creator")
-    # Keeping these for legacy support if you use them elsewhere
     question_sets = relationship("QuestionSet", back_populates="owner")
 
 class Book(Base):
@@ -27,7 +27,6 @@ class Book(Base):
     status = Column(String, nullable=False, default="processing")
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    # Relationships
     owner = relationship("User", back_populates="books")
 
 class Quiz(Base):
@@ -39,7 +38,6 @@ class Quiz(Base):
     questions_data = Column(JSON, nullable=False) 
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    # Relationships
     creator = relationship("User", back_populates="quizzes")
     responses = relationship("QuizResponse", back_populates="quiz")
 
@@ -56,7 +54,6 @@ class QuizResponse(Base):
 
     quiz = relationship("Quiz", back_populates="responses")
 
-# --- Legacy/Unused Schemas (Preserved to prevent errors if referenced) ---
 class QuestionSet(Base):
     __tablename__ = "question_sets"
     id = Column(Integer, primary_key=True, index=True)

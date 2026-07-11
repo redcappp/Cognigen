@@ -1,30 +1,24 @@
 import time
-from fastapi import FastAPI, Depends, HTTPException, status
+from typing import List
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from jose import JWTError, jwt
 
-from . import models, schemas, ai_engine, auth
-from .database import SessionLocal, engine
-from .prompts import PROMPT_TEMPLATES
-from fastapi.middleware.cors import CORSMiddleware
-
-from fastapi import UploadFile, File, Form
-from . import book_processor
-
-from typing import List
+# VERCEL FIX: Removed relative (.) imports
+import models
+import schemas
+import ai_engine
+import auth
+import book_processor
+from database import SessionLocal, engine
+from prompts import PROMPT_TEMPLATES
 
 models.Base.metadata.create_all(bind=engine)
 app = FastAPI(title="CogniGen API", version="1.0")
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-
-app = FastAPI()
-
 # --- SECURITY CLEARANCE (CORS) ---
-# For now, we allow '*' (everything) so the deployment doesn't block your frontend.
-# Once your frontend is live, we will lock this down to just your Vercel URL.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -33,7 +27,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ... rest of your backend routes go below here
 # --- Dependencies ---
 def get_db():
     db = SessionLocal()
@@ -95,34 +88,25 @@ async def upload_book(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    """
-    Endpoint to upload a book, create a record, and start processing.
-    """
     if not file.filename.lower().endswith('.zip'):
         raise HTTPException(status_code=400, detail="Invalid file type. Please upload a .zip file.")
 
-    # Create book record in database
     new_book = models.Book(user_id=current_user.id, book_name=book_name, status="processing")
     db.add(new_book)
     db.commit()
     db.refresh(new_book)
     
-    # Process the book
     file_content = await file.read()
     final_status = book_processor.process_book(file_content, new_book.id)
     
-    # Update status after processing
     new_book.status = final_status
     db.commit()
     
     return {"filename": file.filename, "book_id": new_book.id, "status": final_status}
 
-# Add a new endpoint to get a list of books
-@app.get("/api/v1/books", response_model=List[schemas.BookDisplay]) # You'll need to create BookDisplay schema
+@app.get("/api/v1/books", response_model=List[schemas.BookDisplay]) 
 async def get_user_books(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     return db.query(models.Book).filter(models.Book.user_id == current_user.id).all()
-
-
 
 @app.post("/api/v1/chat")
 async def chat_with_books(
@@ -130,17 +114,14 @@ async def chat_with_books(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    # 1. Embed the user's question
     query_embedding = book_processor.embeddings.embed_query(request.message)
     
-    # 2. Retrieve relevant chunks (Top 5 is usually enough for an answer)
     retrieved_docs = book_processor.chroma_collection.query(
         query_embeddings=[query_embedding],
         n_results=5,
         where={"book_id": {"$in": [str(bid) for bid in request.book_ids]}}
     )
     
-    # 3. Format context
     documents = retrieved_docs['documents'][0]
     metadatas = retrieved_docs['metadatas'][0]
     
@@ -149,14 +130,9 @@ async def chat_with_books(
         meta = metadatas[i]
         context_text += f"Source (Chapter {meta.get('chapter')}, Page {meta.get('book_page')}):\n{doc}\n---\n"
         
-    # 4. Get Answer
     answer = ai_engine.chat_with_book(request.message, context_text)
-    
     return {"response": answer}
 
-# ... imports ...
-
-# 1. CREATE QUIZ (Teacher clicks "Conduct Quiz")
 @app.post("/api/v1/quizzes", response_model=schemas.QuizDisplay)
 def create_quiz(
     quiz_data: schemas.QuizCreate, 
@@ -173,41 +149,23 @@ def create_quiz(
     db.refresh(new_quiz)
     return new_quiz
 
-# 2. GET QUIZ (Student opens the link - No Auth needed!)
 @app.get("/api/v1/quizzes/{quiz_id}")
 def get_quiz_for_student(quiz_id: int, db: Session = Depends(get_db)):
     quiz = db.query(models.Quiz).filter(models.Quiz.id == quiz_id).first()
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
-    
-    # We return the questions. 
-    # NOTE: In a real production app, you might want to hide the 'answer' field here 
-    # so students can't cheat by inspecting the network tab. 
-    # For this prototype, sending the full object is fine.
     return {"title": quiz.title, "questions": quiz.questions_data}
 
-# 3. SUBMIT QUIZ (Student submits answers)
-
-# 4. GET RESULTS (Teacher views leaderboard)
 @app.get("/api/v1/quizzes/{quiz_id}/results", response_model=List[schemas.ResultDisplay])
 def get_quiz_results(
     quiz_id: int, 
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    # Verify the user owns this quiz
     quiz = db.query(models.Quiz).filter(models.Quiz.id == quiz_id, models.Quiz.user_id == current_user.id).first()
     if not quiz:
         raise HTTPException(status_code=403, detail="Not authorized to view these results")
-    
     return quiz.responses
-
-
-# ... inside main.py ...
-
-# ... inside main.py ...
-
-# main.py
 
 @app.post("/api/v1/generate-questions-from-book")
 async def generate_questions_from_book(
@@ -215,10 +173,6 @@ async def generate_questions_from_book(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    # 1. Retrieve source documents
-    
-    # 1. Retrieve source documents using Pinecone Similarity Search
-    # Pinecone/LangChain handles the embedding step for us implicitly during search
     filter_dict = {"book_id": {"$in": [str(bid) for bid in request.book_ids]}}
     
     raw_docs = book_processor.vectorstore.similarity_search(
@@ -227,34 +181,24 @@ async def generate_questions_from_book(
         filter=filter_dict
     )
     
-    # Restructure back into the format your existing pipeline expects
     documents = [doc.page_content for doc in raw_docs]
     metadatas = [doc.metadata for doc in raw_docs]
-    
     final_questions_list = []
 
-    # 2. Iterate through each configuration group
     for config in request.configs:
         print(f"Processing config: {config.num_questions} {config.hardness} {config.question_type}")
         
-        # --- FIXED HARD PIPELINE CALL ---
         if config.hardness == "Hard":
             print(f">>> Triggering Advanced Hard Pipeline ({config.question_type})")
             
-            # PASS 'metadatas' HERE
             hard_qs = ai_engine.generate_hard_questions_pipeline(
                 retrieved_docs=documents,
-                retrieved_metas=metadatas,   # <--- NEW ARGUMENT
+                retrieved_metas=metadatas,
                 num_questions=config.num_questions,
                 question_type=config.question_type
             )
             
-            # Inject Book Name (Database Lookup)
             for q in hard_qs:
-                # The 'source_metadata' field now holds the specific page info from the pipeline
-                # We just need to resolve the Book Name
-                
-                # Take the first source to find the Book ID (usually they are from the same book in this flow)
                 first_meta = q.get("source_metadata", [{}])[0]
                 book_id = first_meta.get('book_id')
                 
@@ -264,14 +208,10 @@ async def generate_questions_from_book(
                     if book: book_name = book.book_name
                 
                 q["source_book_name"] = book_name
-                
-                # Map internal fields to what your Frontend expects
-                # If it's multi-hop, 'source_book_page' can show the combined string we made
                 q["source_book_page"] = q.get("source_ref_text", "See details")
 
             final_questions_list.extend(hard_qs)
 
-        # --- EXISTING STRATEGY A: Easy/Medium ---
         else:
             mid_point = len(documents) // 2
             batches = [
@@ -319,18 +259,12 @@ async def generate_questions_from_book(
 
     return {"questions": final_questions_list}
 
-# ... inside main.py ...
-
-# 5. GET TEACHER'S QUIZZES
 @app.get("/api/v1/my-quizzes", response_model=List[schemas.QuizDisplay])
 def get_my_quizzes(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
     return db.query(models.Quiz).filter(models.Quiz.user_id == current_user.id).order_by(models.Quiz.created_at.desc()).all()
-
-
-# In main.py, replace the submit_quiz function with this:
 
 @app.post("/api/v1/quizzes/{quiz_id}/submit")
 def submit_quiz(
@@ -345,13 +279,9 @@ def submit_quiz(
     total_score = 0
     graded_answers = {}
 
-    print(f"--- Processing Submission for Quiz {quiz_id} ---")
-    
-    # Helper 1: Clean text (remove case/dots)
     def clean_text(text):
         return str(text).strip().rstrip('.').lower()
 
-    # Helper 2: Normalize Keys (e.g., "A.", "a)", "A " -> "A")
     def normalize_key(k):
         return str(k).strip().upper().replace('.', '').replace(')', '')
 
@@ -364,67 +294,48 @@ def submit_quiz(
         is_correct = False
         
         correct_raw = str(q.get('answer', ''))
-        
-        # 'options' comes as a Dictionary {"A": "Text", "B": "Text"}
         options_data = q.get('options') or q.get('choices')
         q_type = q.get('question_type', 'Unknown')
 
         if student_ans:
-            print(f"Checking Q{idx} [{q_type}]: Student Input='{student_ans}' Correct='{correct_raw}'")
-
-            # --- LOGIC 1: MULTIPLE ANSWER ---
-            # Trigger if type says 'Multiple-Answer' OR if student sent a list
             if (q_type == "Multiple-Answer" or isinstance(student_ans, list)):
-                # Ensure student_ans is a list
                 if not isinstance(student_ans, list):
                     student_ans = [student_ans]
 
-                # Normalize everything to Sets of Keys {"A", "B"}
                 correct_keys = set(normalize_key(k) for k in correct_raw.split(','))
                 student_keys = set(normalize_key(k) for k in student_ans)
                 
-                # Generate Readable Answer String
                 selected_texts = []
                 if isinstance(options_data, dict):
                     for k in student_ans:
                         norm_k = normalize_key(k)
-                        # Try finding by raw key or normalized key
                         val = options_data.get(k) or options_data.get(norm_k)
                         if val: selected_texts.append(str(val))
                 if selected_texts:
                     final_stored_answer = ", ".join(selected_texts)
 
-                # Strict Comparison
                 if student_keys == correct_keys:
                     points = 1
                     is_correct = True
 
-            # --- LOGIC 2: SINGLE CHOICE / ASSERTION ---
-            # Trigger if MC/Assertion OR if correct answer is a single letter like "A"
             elif (q_type in ["Multiple-Choice", "Assertion-Reason"]) or (len(normalize_key(correct_raw)) == 1 and normalize_key(correct_raw).isalpha()):
-                
                 norm_student = normalize_key(student_ans)
                 norm_correct = normalize_key(correct_raw)
 
-                # 1. Direct Key Comparison ("A" == "A")
                 if norm_student == norm_correct:
                     points = 1
                     is_correct = True
                 
-                # 2. Text Fallback (Did they send "Modularity" instead of "A"?)
                 if not is_correct and isinstance(options_data, dict):
                     correct_text = options_data.get(norm_correct)
-                    # Check if student answer matches the text of the correct option
                     if correct_text and clean_text(student_ans) == clean_text(correct_text):
                         points = 1
                         is_correct = True
                         
-                # Store readable text
                 if isinstance(options_data, dict):
                     val = options_data.get(student_ans) or options_data.get(norm_student)
                     if val: final_stored_answer = val
 
-            # --- LOGIC 3: OPEN TEXT ---
             else:
                 points = ai_engine.grade_answer(q.get('question'), correct_raw, str(student_ans))
                 if points >= 1: is_correct = True
@@ -449,26 +360,20 @@ def submit_quiz(
     
     return {"message": "Submitted", "score": total_score}
 
-
-
 @app.patch("/api/v1/quiz-responses/{response_id}/score")
 def update_quiz_score(
     response_id: int, 
-    update: schemas.ScoreUpdate, # <--- Use the schema prefix
+    update: schemas.ScoreUpdate, 
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    # ... logic ...
-    # Fetch response
     response = db.query(models.QuizResponse).filter(models.QuizResponse.id == response_id).first()
     if not response: raise HTTPException(status_code=404, detail="Response not found")
     
-    # Verify ownership (via Quiz relationship)
     quiz = db.query(models.Quiz).filter(models.Quiz.id == response.quiz_id).first()
     if quiz.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    # Update Score
     response.score = update.new_score
     db.commit()
     return {"message": "Score updated", "new_score": response.score}
