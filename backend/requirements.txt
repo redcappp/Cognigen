@@ -1,4 +1,4 @@
-﻿absl-py==1.4.0
+absl-py==1.4.0
 accelerate==1.10.1
 adagio==0.2.6
 affine==2.4.0
