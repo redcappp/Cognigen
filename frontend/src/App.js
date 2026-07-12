@@ -13,7 +13,8 @@ import { generateQuestionPaper, generateAnswerKey } from './pdfGenerator';
 import './App.css';
 
 // --- DEPLOYMENT CONFIGURATION ---
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000';
+// UPDATED: Now defaults to the production backend URL
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://cognigen.vercel.app';
 
 // --- WELCOME ANIMATION ---
 const WelcomeScreen = ({ onComplete }) => {

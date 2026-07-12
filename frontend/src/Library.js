@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
 
+// UPDATED: Added Base URL to match App.js
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://cognigen.vercel.app';
+
 function Library({ token, onSelect, selectedBooks }) {
   const [books, setBooks] = useState([]);
   const [bookName, setBookName] = useState('');
@@ -7,7 +10,8 @@ function Library({ token, onSelect, selectedBooks }) {
   const [message, setMessage] = useState('');
 
   const fetchBooks = async () => {
-    const response = await fetch('http://127.0.0.1:8000/api/v1/books', {
+    // UPDATED: Now uses API_BASE_URL instead of http://127.0.0.1:8000
+    const response = await fetch(`${API_BASE_URL}/api/v1/books`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     if (response.ok) {
@@ -32,7 +36,8 @@ function Library({ token, onSelect, selectedBooks }) {
     formData.append('file', file);
 
     setMessage('Uploading and processing... This may take a few minutes.');
-    const response = await fetch('http://127.0.0.1:8000/api/v1/books/upload', {
+    // UPDATED: Now uses API_BASE_URL instead of http://127.0.0.1:8000
+    const response = await fetch(`${API_BASE_URL}/api/v1/books/upload`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}` },
       body: formData,
