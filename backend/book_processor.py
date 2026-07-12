@@ -4,18 +4,20 @@ import io
 from dotenv import load_dotenv
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_huggingface import HuggingFaceEmbeddings
+# Swapped to Inference API to bypass Vercel size limits
+from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings 
 from pinecone import Pinecone
 from langchain_pinecone import PineconeVectorStore
 
 load_dotenv()
 
-# Production-grade embedding engine (runs locally in RAM)
-embeddings = HuggingFaceEmbeddings(
+# Remote Inference API (runs in the cloud, not in Vercel RAM)
+embeddings = HuggingFaceInferenceAPIEmbeddings(
+    api_key=os.environ.get("HUGGINGFACEHUB_API_TOKEN"),
     model_name="sentence-transformers/all-MiniLM-L6-v2"
 )
 
-# Connect to Pinecone Cloud
+# Connect to Pinecone Cloud[cite: 3]
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 vectorstore = PineconeVectorStore(
     index_name=os.getenv("PINECONE_INDEX_NAME", "cognigen-index"),
@@ -24,7 +26,7 @@ vectorstore = PineconeVectorStore(
 
 def process_book(file_content: bytes, book_id: int):
     try:
-        # Create temporary storage for processing
+        # Create temporary storage for processing[cite: 3]
         temp_dir = f"/tmp/books_{book_id}"
         os.makedirs(temp_dir, exist_ok=True)
 
@@ -55,7 +57,7 @@ def process_book(file_content: bytes, book_id: int):
                     os.remove(temp_path)
                 chapter_number += 1
 
-        # Production-grade Upsert to Vector Store
+        # Production-grade Upsert to Vector Store[cite: 3]
         vectorstore.add_documents(all_chunks)
         return "ready"
     
